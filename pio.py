@@ -181,3 +181,87 @@ class Servo(Pio):
 		# call this when program closes
 		self.stop()
 		Pio.close(self)
+		
+# Using just the GPIO pins it is possible to drive
+# a stepper motor in full or half steps.
+# using four pins the two coils can be driven +, - or off
+# if only fill steps are needed two pins can be saved by 
+# using an inverter (e.g. 74HC04B1) to control the polarity
+# of the 'other' end of the coil
+class Stepper(Pio):
+	# Drive a stepper motor
+	# Testing done with a SN754410 H-bridge
+	# connections
+	# GPIO    H-bridge     wire
+	# pin1    7            green
+	# pin2    2            red
+	# pin3    15           yellow
+	# pin4    9            blue
+	#
+	# Motor   H-bridge     wire
+	#         6            green
+	#         3            red
+	#         14           yellow
+	#         11           blue
+	# 
+	# pi 5v to pin 1 9 16
+	# 12v to pin 8
+	# states contains the sequence of pin states
+
+	def __init__(self,pin1,pin2,pin3 = 0,pin4 = 0, halfstep = False):
+		Pio.__init__(self)
+		
+		if pin3 == 0:
+			# setup for 2 pin moded
+			self.pins = (pin1,pin2)
+			self.states = ((1,1),(0,1),(0,0),(1,0))
+		else:
+			# 4 pin full and half step
+			self.pins = (pin1,pin2,pin3,pin4)
+			if halfstep:
+				self.states = ((1,0,0,0),(1,0,1,0),(0,0,1,0),(0,1,1,0), \
+							   (0,1,0,0),(0,1,0,1),(0,0,0,1),(1,0,0,1))
+			else:
+				self.states = ((1,0,1,0),(0,1,1,0),(0,1,0,1),(1,0,0,1))		
+
+		self.num_states = len(self.states)
+		self.num_pins = len(self.pins)
+
+		# set pins to output and low
+		for pin in self.pins:
+			Pio.pi.set_mode(pin,pg.OUTPUT)
+			Pio.pi.write(pin,0)
+		
+		# start of with state 0
+		self.state = 0
+		
+	def step(self,forward = True):
+		# do one step in forward or reverse
+		if forward:
+			self.state += 1
+			if self.state >= self.num_states:
+				self.state = 0
+		else:
+			self.state -= 1
+			if self.state < 0:
+				self.state = self.num_states - 1
+		
+		# set local variable for efficiency
+		state = self.states[self.state]
+		
+		# now set the pins according to state
+		for i in range (0,self.num_pins):
+			Pio.pi.write(self.pins[i],state[i])
+		
+	def stop(self):
+		# set all pins low
+		for i in range (0,self.num_pins):
+			Pio.pi.write(self.pins[i],0)
+			
+	def close(self):
+		# tidy up
+		self.stop()
+		Pio.close(self)
+		
+		
+		
