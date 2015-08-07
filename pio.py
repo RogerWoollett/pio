@@ -65,16 +65,30 @@ class ADC(Pio):
 	# CE0	24(GPIO8)	10 - chip select
 	# CE1	26(GPIO7)	10 - chip select on second chip
 	# There is a second set of pins used on A+ B+ and Pi2
-	# This auxilliary port is not supported as yet
-	def __init__(self,chip):
+	# MOSI  38(GPIO20)  11 - data in
+	# NISO  35(GPIO19)  12 - data out
+	# SCLK  40(GPIO21)  13 - clock
+	# CE0   19(GPIO18)	10 - chip select
+	# CE1   11(GPIO17)  10 - chip select
+	# CE2   36(GPIO16)	10 - chip select
+	def __init__(self,ce,aux = False):
+		# set aux true to use second port
 		Pio.__init__(self)
-		# chip should be 0 (chip connected to CE0) or 1 (CE1)
-		if chip < 0 or chip > 1:
-			Pio.close(self)
-			raise RuntimeError('chip must be 0 (CE0) or 1 (CE1)')
-			
-		self.handle = Pio.pi.spi_open(chip,50000,0)
 		
+		# standard port has two chip select, second port has three
+		if aux:
+			flags = 0x100	# set A bit
+			if ce < 0 or ce > 2:
+				Pio.close(self)
+				raise RuntimeError('chip must be 0 (CE0), 1 (CE1) or 2 (CE2)')
+		else:
+			flags = 0
+			if ce < 0 or ce > 1:
+				Pio.close(self)
+				raise RuntimeError('chip must be 0 (CE0) or 1 (CE1)')
+					
+		self.handle = Pio.pi.spi_open(ce,50000,flags)
+
 	def close(self):
 		Pio.pi.spi_close(self.handle)
 		Pio.close(self)
@@ -104,6 +118,7 @@ class ADC(Pio):
 class Motor(Pio):
 	# Motor controls two pins which are connected to
 	# one half of a dual H-Bridge controller
+	
 	# I use a SN74110NE
 	def __init__(self,pin1,pin2,frequency = 15000):
 		Pio.__init__(self)
@@ -187,7 +202,7 @@ class Servo(Pio):
 # using four pins the two coils can be driven +, - or off
 # if only fill steps are needed two pins can be saved by 
 # using an inverter (e.g. 74HC04B1) to control the polarity
-# of the 'other' end of the coil
+# of the 'other' end of the coilADC 
 class Stepper(Pio):
 	# Drive a stepper motor
 	# Testing done with a SN754410 H-bridge
