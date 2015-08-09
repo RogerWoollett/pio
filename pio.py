@@ -3,6 +3,8 @@
 # written by Roger Woollett
 import pigpio as pg
 import socket as soc
+from time import sleep
+
 
 class Pio():
 	# to override the default host name (ip address) and port
@@ -80,12 +82,12 @@ class ADC(Pio):
 			flags = 0x100	# set A bit
 			if ce < 0 or ce > 2:
 				Pio.close(self)
-				raise RuntimeError('chip must be 0 (CE0), 1 (CE1) or 2 (CE2)')
+				raise RuntimeError('ce must be 0 (CE0), 1 (CE1) or 2 (CE2)')
 		else:
 			flags = 0
 			if ce < 0 or ce > 1:
 				Pio.close(self)
-				raise RuntimeError('chip must be 0 (CE0) or 1 (CE1)')
+				raise RuntimeError('ce must be 0 (CE0) or 1 (CE1)')
 					
 		self.handle = Pio.pi.spi_open(ce,50000,flags)
 
@@ -111,7 +113,7 @@ class ADC(Pio):
 			
 		(count,data) = Pio.pi.spi_xfer(self.handle,[1,(8 + channel) << 4,0])
 		if count > 0:
-			return (data[1] << 8) + data[2]
+			return (data[1] << 8) | data[2]
 		else:
 			return 0
 
@@ -278,5 +280,104 @@ class Stepper(Pio):
 		self.stop()
 		Pio.close(self)
 		
+class LCD(Pio):
+	# class to control a Hitachi type LCD display
+
+	row_offsets = (0,0x40,0x10,0x50)
+	cmd_set_address = 0x80
+	cmd_clear = 0b00000001
+	cmd_8bit = 0b00110000
+	cmd_4bit = 0b00100000
+	cmd_on = 0b00001000
+	cmd_mode = 0b00000100
+	cmd_8bit_init = 0b0011
+	cmd_4bit_init = 0b0010
+
+	def __init__(self,p1,p2,p3,p4,cmd,strobe):
+		# p1 is most significant bit
+		Pio.__init__(self)
+		
+		self.data_pins = (p4,p3,p2,p1)
+		self.cmd_reg = cmd
+		self.strobe = strobe
+		
+		for pin in self.data_pins:
+			Pio.pi.set_mode(pin,pg.OUTPUT)
+		
+		Pio.pi.set_mode(cmd,pg.OUTPUT)
+		Pio.pi.set_mode(strobe,pg.OUTPUT)
+		
+		self.init()
+		
+	def init(self):
+		# called once 
+		# this sequence seems to be what is required
+		# and it seems to work
+		# python + pigpio seems to be slow enough not to need delays
+		self._set_data(False)				# set command mode
+		self._send_nibble(LCD.cmd_8bit_init) # set 8 bit mode
+		self._send_nibble(LCD.cmd_8bit_init) # and again
+		self._send_nibble(LCD.cmd_8bit_init) # and again
+
+		self._send_nibble(LCD.cmd_4bit_init)  # switch to 4 bit
+		self.send_command(LCD.cmd_4bit | 0b1000) # set two line mode
+		
+		self.on()
+		
+	def on(self,on = True,cursor = False,blink = False):
+		# turn screen on and set cursor details
+		self.send_command(LCD.cmd_on |(on << 2) | (cursor << 1) | blink)
+		
+	def clear(self):
+		# clear the screen
+		self.send_command(LCD.cmd_clear)
+		
+	def send_string(self,text):
+		# send string to current cursor position
+		for ch in (text):
+			self.send_char(ord(ch))
+			
+	def send_char(self,char):
+		self._send_data(char)
+		
+	def entry_mode(self,shift = False,leftshift = False):
+		# sets if new data shifts display and which way
+		self.send_command(LCD.cmd_entry_mode | (leftshift <<1) | shift)
+			
+	def set_cursor(self,row,column):
+		address = column + LCD.row_offsets[row]
+		self.send_command(LCD.cmd_set_address | address)
+		
+	def send_command(self,cmd):
+		self._set_data(False)
+		self._send_byte(cmd)
+		
+	def _send_data(self,data):
+		self._set_data(True)
+		self._send_byte(data)
+		
+	def _send_byte(self,data):
+		self._send_nibble((data & 0xf0) >> 4)
+		self._send_nibble(data & 0xf)
+		
+	def _set_data(self,data):
+		# call with True for Data, False for command
+		Pio.pi.write(self.cmd_reg,data)
+		
+	def _send_nibble(self,data):
+		Pio.pi.write(self.strobe,1)
+		for i in range(0,4):
+			Pio.pi.write(self.data_pins[i],(data >> i) & 1)
+		
+		Pio.pi.write(self.strobe,0)
+		
+	def close(self):
+		self.clear()
+		
+		#for i in range(0,4):
+		#	Pio.pi.write(self.data_pins[i],0)
+			
+		Pio.close(self)
+			
 		
 		
