@@ -283,7 +283,8 @@ class Stepper(Pio):
 class LCD(Pio):
 	# class to control a Hitachi type LCD display
 
-	row_offsets = (0,0x40,0x10,0x50)
+	row_offsets16 = (0,0x40,0x10,0x50)
+	row_offsets20 = (0,0x40,0x14,0x54)
 	cmd_set_address = 0x80
 	cmd_clear = 0b00000001
 	cmd_8bit = 0b00110000
@@ -293,8 +294,10 @@ class LCD(Pio):
 	cmd_8bit_init = 0b0011
 	cmd_4bit_init = 0b0010
 
-	def __init__(self,p1,p2,p3,p4,cmd,strobe):
+	def __init__(self,p1,p2,p3,p4,cmd,strobe,d20x4 = False):
 		# p1 is most significant bit
+		# 20 char by 4 line screens need different offsets
+		# so set d20x4 True for these screens
 		Pio.__init__(self)
 		
 		self.data_pins = (p4,p3,p2,p1)
@@ -306,6 +309,11 @@ class LCD(Pio):
 		
 		Pio.pi.set_mode(cmd,pg.OUTPUT)
 		Pio.pi.set_mode(strobe,pg.OUTPUT)
+		
+		if d20x4:
+			self.row_offsets = LCD.row_offsets20
+		else:
+			self.row_offsets = LCD.row_offsets16
 		
 		self.init()
 		
@@ -320,35 +328,38 @@ class LCD(Pio):
 		self._send_nibble(LCD.cmd_8bit_init) # and again
 
 		self._send_nibble(LCD.cmd_4bit_init)  # switch to 4 bit
-		self.send_command(LCD.cmd_4bit | 0b1000) # set two line mode
+		self._send_command(LCD.cmd_4bit | 0b1000) # set two line mode
 		
 		self.on()
 		
 	def on(self,on = True,cursor = False,blink = False):
 		# turn screen on and set cursor details
-		self.send_command(LCD.cmd_on |(on << 2) | (cursor << 1) | blink)
+		self._send_command(LCD.cmd_on |(on << 2) | (cursor << 1) | blink)
 		
 	def clear(self):
 		# clear the screen
-		self.send_command(LCD.cmd_clear)
+		self._send_command(LCD.cmd_clear)
 		
 	def send_string(self,text):
 		# send string to current cursor position
+		self._set_data(True)
 		for ch in (text):
-			self.send_char(ord(ch))
+			self._send_byte(ord(ch))
 			
 	def send_char(self,char):
+		# send a single character to the display
+		# normal code will use send_string
 		self._send_data(char)
 		
 	def entry_mode(self,shift = False,leftshift = False):
 		# sets if new data shifts display and which way
-		self.send_command(LCD.cmd_entry_mode | (leftshift <<1) | shift)
+		self._send_command(LCD.cmd_entry_mode | (leftshift <<1) | shift)
 			
 	def set_cursor(self,row,column):
-		address = column + LCD.row_offsets[row]
-		self.send_command(LCD.cmd_set_address | address)
+		address = column + self.row_offsets[row]
+		self._send_command(LCD.cmd_set_address | address)
 		
-	def send_command(self,cmd):
+	def _send_command(self,cmd):
 		self._set_data(False)
 		self._send_byte(cmd)
 		
@@ -374,8 +385,8 @@ class LCD(Pio):
 	def close(self):
 		self.clear()
 		
-		#for i in range(0,4):
-		#	Pio.pi.write(self.data_pins[i],0)
+		for i in range(0,4):
+			Pio.pi.write(self.data_pins[i],0)
 			
 		Pio.close(self)
 			
