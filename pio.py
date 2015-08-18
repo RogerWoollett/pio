@@ -202,9 +202,9 @@ class Servo(Pio):
 # Using just the GPIO pins it is possible to drive
 # a stepper motor in full or half steps.
 # using four pins the two coils can be driven +, - or off
-# if only fill steps are needed two pins can be saved by 
+# if only full steps are needed two pins can be saved by 
 # using an inverter (e.g. 74HC04B1) to control the polarity
-# of the 'other' end of the coilADC 
+# of the 'other' end of the stepper coil 
 class Stepper(Pio):
 	# Drive a stepper motor
 	# Testing done with a SN754410 H-bridge
@@ -251,6 +251,7 @@ class Stepper(Pio):
 		
 		# start of with state 0
 		self.state = 0
+		self.abort = False
 		
 	def step(self,forward = True):
 		# do one step in forward or reverse
@@ -269,6 +270,21 @@ class Stepper(Pio):
 		# now set the pins according to state
 		for i in range (0,self.num_pins):
 			Pio.pi.write(self.pins[i],state[i])
+			
+	def steps(self,count,delay,forward = True):
+		# do multiple steps - note delay is in seconds
+		# but can be less than 1
+		self.abort = False
+		while count and (not self.abort):
+			self.step(forward)
+			sleep(delay)
+			count -= 1
+	
+	def abort_steps(self):
+		# abort a previous call to steps
+		# to be effective it will have to be called
+		# from another thread
+		self.abort = True;	
 		
 	def stop(self):
 		# set all pins low
